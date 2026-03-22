@@ -1130,7 +1130,21 @@
   });
 
   // ── Fetch all data in parallel (snapshot-only static build) ──────
-  const SNAPSHOT_BASE = "./data/snapshots";
+  // Try multiple path layouts for each file so partial/moved deployments
+  // can still succeed on GitHub Pages.
+  const pathPrefix = window.location.pathname.replace(/\/[^/]*$/, "");
+  const rawCandidates = [
+    `${pathPrefix}/data/snapshots`,
+    `${pathPrefix}/gh-pages-map-static/data/snapshots`,
+    "./data/snapshots",
+    "./gh-pages-map-static/data/snapshots",
+    "/data/snapshots",
+    "/gh-pages-map-static/data/snapshots",
+  ];
+  const SNAPSHOT_BASE_CANDIDATES = [...new Set(rawCandidates)].map((base) =>
+    base.replace(/\/+/g, "/").replace(/\/$/, "")
+  );
+  let loadSettled = false;
 
   async function fetchJson(url, label) {
     const response = await fetch(url);
@@ -1141,11 +1155,22 @@
   }
 
   async function loadDataLayer(snapshotFile, label) {
-    const snapshotUrl = `${SNAPSHOT_BASE}/${snapshotFile}`;
+    const tried = [];
+    for (const base of SNAPSHOT_BASE_CANDIDATES) {
+      const snapshotUrl = `${base}/${snapshotFile}`;
+      tried.push(snapshotUrl);
+      try {
+        const data = await fetchJson(snapshotUrl, `${label} snapshot`);
+        console.log(`[data-layer] ${label}: ${snapshotUrl}`);
+        return data;
+      } catch {
+        // Try next path.
+      }
+    }
 
-    const data = await fetchJson(snapshotUrl, `${label} snapshot`);
-    console.log(`[data-layer] ${label}: snapshot`);
-    return data;
+    throw new Error(
+      `${label} snapshot not found. Tried:\n${tried.join("\n")}`
+    );
   }
 
   console.log("Starting to fetch map data...");
@@ -1157,6 +1182,7 @@
     loadDataLayer("map-meta.json", "meta"),
   ]).then(([dioceses, parishPolys, points, meta]) => {
     try {
+      loadSettled = true;
       console.log("All data loaded successfully");
       console.log("dioceses features:", dioceses.features?.length || 0);
       console.log("parishPolys features:", parishPolys.features?.length || 0);
@@ -1186,14 +1212,15 @@
         `<div style="text-align:center"><p style="color:#c55">Error initializing map</p><p style="color:#aab;font-size:0.82rem;margin-top:0.5rem">${err.message}<br>Check browser console</p></div>`;
     }
   }).catch(err => {
+    loadSettled = true;
     console.error("Error loading map data:", err);
     document.getElementById("loading-overlay").innerHTML =
-      `<div style="text-align:center"><p style="color:#c55">Failed to load map data</p><p style="color:#aab;font-size:0.82rem;margin-top:0.5rem">${err.message}<br>Check browser console for details</p></div>`;
+      `<div style="text-align:center"><p style="color:#c55">Failed to load map data</p><p style="color:#aab;font-size:0.82rem;margin-top:0.5rem;white-space:pre-line">${err.message}<br>Check browser console for details</p></div>`;
   });
   
   // Failsafe: if loading takes too long, show error
   setTimeout(() => {
-    if (metaData === null) {
+    if (!loadSettled && metaData === null) {
       console.error("Map data loading timed out");
       document.getElementById("loading-overlay").innerHTML =
         `<div style="text-align:center"><p style="color:#c55">Map data is taking too long to load</p><p style="color:#aab;font-size:0.82rem;margin-top:0.5rem">Try refreshing the page</p></div>`;
