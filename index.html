@@ -160,117 +160,188 @@
       flex-shrink: 0;
     }
 
-    /* ── Controls toggle button ─────────────── */
-    #controls-toggle {
+    /* ── Search bar ─────────────────────────── */
+    #search-bar {
       position: absolute;
       top: 10px;
-      right: 10px;
+      left: 50%;
+      transform: translateX(-50%);
       z-index: 16;
-      background: rgba(16,20,28,0.88);
-      backdrop-filter: blur(8px);
-      border: 1px solid rgba(255,255,255,0.06);
-      color: var(--label);
-      width: 36px;
-      height: 36px;
-      border-radius: var(--radius);
-      cursor: pointer;
-      font-size: 1.05rem;
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 6px;
+      width: 480px;
+      max-width: calc(100% - 200px);
+    }
+    .search-row {
       display: flex;
       align-items: center;
-      justify-content: center;
-      transition: all 0.15s;
-    }
-    #controls-toggle:hover { color: #fff; background: var(--navy-light); }
-    #controls-toggle.active { color: var(--gold); }
-
-    /* ── Controls drawer ────────────────────── */
-    .controls-panel {
-      position: absolute;
-      top: 52px;
-      right: 10px;
       background: rgba(16,20,28,0.92);
-      backdrop-filter: blur(8px);
-      border: 1px solid rgba(255,255,255,0.06);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 10px;
+      overflow: hidden;
+      transition: border-color 0.2s;
+    }
+    .search-row:focus-within {
+      border-color: rgba(197,163,68,0.4);
+    }
+    .search-icon {
+      padding: 0 4px 0 14px;
+      color: var(--label);
+      font-size: 0.85rem;
+      flex-shrink: 0;
+      pointer-events: none;
+    }
+    .search-row input[type="search"] {
+      flex: 1;
+      background: none;
+      border: none;
       color: #fff;
-      padding: 14px;
-      border-radius: var(--radius);
-      font-size: 0.76rem;
-      z-index: 15;
+      padding: 10px 8px;
+      font-size: 0.82rem;
+      font-family: inherit;
+      outline: none;
+      min-width: 0;
+    }
+    .search-row input[type="search"]::placeholder { color: #556; }
+    .search-row input[type="search"]::-webkit-search-cancel-button { display: none; }
+    .search-btn {
+      background: none;
+      border: none;
+      border-left: 1px solid rgba(255,255,255,0.06);
+      color: var(--label);
+      padding: 10px 12px;
+      cursor: pointer;
+      font-size: 0.82rem;
+      font-family: inherit;
+      transition: color 0.15s, background 0.15s;
+      white-space: nowrap;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .search-btn:hover { color: #fff; background: rgba(255,255,255,0.04); }
+    .search-btn.active { color: var(--gold); }
+    .search-btn svg { width: 15px; height: 15px; }
+
+    /* ── Filter chips ─────────────────────────── */
+    #filter-chips {
       display: none;
-      flex-direction: column;
-      gap: 12px;
-      max-height: calc(100vh - 160px);
-      overflow-y: auto;
-      min-width: 210px;
-      transform-origin: top right;
+      flex-wrap: wrap;
+      gap: 6px;
+      padding: 0 2px;
+    }
+    #filter-chips.has-chips { display: flex; }
+    .filter-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 10px 4px 12px;
+      background: rgba(197,163,68,0.12);
+      border: 1px solid rgba(197,163,68,0.25);
+      border-radius: 20px;
+      color: #dca;
+      font-size: 0.72rem;
+      font-family: inherit;
+      cursor: pointer;
+      transition: all 0.15s;
+      line-height: 1.3;
+    }
+    .filter-chip:hover { background: rgba(197,163,68,0.22); border-color: rgba(197,163,68,0.4); }
+    .chip-remove {
+      font-size: 0.65rem;
+      opacity: 0.6;
+      transition: opacity 0.15s;
+      line-height: 1;
+    }
+    .filter-chip:hover .chip-remove { opacity: 1; }
+
+    /* ── Dropdown panels ──────────────────────── */
+    .dropdown-panel {
+      display: none;
+      background: rgba(16,20,28,0.94);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 10px;
+      padding: 12px;
+      color: #fff;
+      font-size: 0.76rem;
       animation: panelIn 0.12s ease-out;
     }
-    .controls-panel.open { display: flex; }
+    .dropdown-panel.open { display: block; }
     @keyframes panelIn {
-      from { opacity: 0; transform: scale(0.95) translateY(-4px); }
-      to { opacity: 1; transform: scale(1) translateY(0); }
+      from { opacity: 0; transform: translateY(-4px); }
+      to { opacity: 1; transform: translateY(0); }
     }
-    .controls-panel h4 {
-      font-size: 0.72rem;
-      color: var(--label);
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      font-weight: 500;
-      padding-bottom: 4px;
-      margin: 0;
+
+    /* Filter panel grid */
+    .filter-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-bottom: 10px;
     }
-    .controls-panel label {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      cursor: pointer;
-      padding: 2px 0;
-      color: #ccd;
-    }
-    .controls-panel input[type="checkbox"] { accent-color: var(--gold); }
-    .controls-panel input[type="text"],
-    .controls-panel input[type="search"],
-    .controls-panel select {
+    .filter-grid select {
       width: 100%;
-      padding: 6px 10px;
+      padding: 7px 10px;
       border: 1px solid rgba(255,255,255,0.1);
       background: rgba(255,255,255,0.06);
       color: #fff;
       border-radius: 6px;
-      font-size: 0.78rem;
+      font-size: 0.76rem;
       font-family: inherit;
+      cursor: pointer;
       transition: border-color 0.15s;
     }
-    .controls-panel input:focus,
-    .controls-panel select:focus {
+    .filter-grid select:focus {
       outline: none;
       border-color: rgba(197,163,68,0.5);
     }
-    .controls-panel input[type="text"]::placeholder,
-    .controls-panel input[type="search"]::placeholder {
-      color: #556;
+    .filter-grid select option { background: var(--navy); color: #fff; }
+    .filter-actions {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
     }
-    .controls-panel select { cursor: pointer; }
-    .controls-panel select option { background: var(--navy); color: #fff; }
-    .controls-panel button {
-      padding: 6px 12px;
-      background: var(--gold);
-      color: var(--navy);
+    .action-btn {
+      padding: 6px 14px;
       border: none;
       border-radius: 6px;
       cursor: pointer;
       font-weight: 600;
-      font-size: 0.78rem;
+      font-size: 0.76rem;
+      font-family: inherit;
       transition: all 0.15s;
     }
-    .controls-panel button:hover { opacity: 0.9; }
-    .controls-panel button.secondary {
-      background: rgba(255,255,255,0.1);
+    .action-btn:hover { opacity: 0.9; }
+    .action-btn.primary {
+      background: var(--gold);
+      color: var(--navy);
+    }
+    .action-btn.secondary {
+      background: rgba(255,255,255,0.08);
       color: #aab;
     }
-    .controls-section { display: flex; flex-direction: column; gap: 4px; }
-    .controls-actions { display: flex; gap: 8px; }
-    .controls-actions button { flex: 1; }
+
+    /* Layers panel labels */
+    #layers-panel {
+      display: none;
+      flex-direction: column;
+      gap: 5px;
+    }
+    #layers-panel.open { display: flex; }
+    #layers-panel label {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      cursor: pointer;
+      padding: 3px 0;
+      color: #ccd;
+      font-size: 0.78rem;
+    }
+    #layers-panel input[type="checkbox"] { accent-color: var(--gold); }
     
     /* ── Statistics panel ───────────────────── */
     #stats-panel {
@@ -362,25 +433,23 @@
       color: #8899aa;
     }
     
-    /* ── Search highlight ────────────────────── */
-    .search-active {
-      animation: pulse 2s ease-in-out infinite;
-    }
-    @keyframes pulse {
-      0%, 100% { border-color: rgba(197,163,68,0.3); }
-      50% { border-color: rgba(197,163,68,0.8); }
-    }
-    
     @media (max-width: 900px) {
-      #legend, .controls-panel { max-width: 44vw; }
+      #legend { max-width: 44vw; }
+      #search-bar { max-width: calc(100% - 180px); }
     }
     @media (max-width: 640px) {
       header { padding: 0.6rem 1rem; }
-      #legend, .controls-panel {
+      #legend {
         font-size: 0.72rem;
         max-width: 88vw;
         max-height: 40vh;
       }
+      #search-bar {
+        width: 100%;
+        max-width: calc(100% - 24px);
+        top: 8px;
+      }
+      .filter-grid { grid-template-columns: 1fr; }
       .header-stats { display: none; }
     }
 
@@ -797,44 +866,48 @@
     <div id="legend-items"></div>
   </div>
 
-  <button id="controls-toggle" title="Controls">&#9881;</button>
-  <div class="controls-panel">
-    <h4>Filters</h4>
-    <div class="controls-section">
-      <input type="search" id="searchInput" placeholder="Search parishes, cities..." />
-      <select id="filterDiocese">
-        <option value="">All Dioceses</option>
-      </select>
-      <select id="filterPatriarchate">
-        <option value="">All Patriarchates</option>
-      </select>
-      <select id="filterState">
-        <option value="">All States</option>
-      </select>
-      <select id="filterImportance">
-        <option value="">All Parishes</option>
-        <option value="cathedral">Cathedrals</option>
-        <option value="monastery">Monasteries</option>
-        <option value="seminary">Seminaries</option>
-        <option value="notable">Notable</option>
-      </select>
+  <!-- Search + Filter Bar -->
+  <div id="search-bar">
+    <div class="search-row">
+      <span class="search-icon">
+        <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="6.5" cy="6.5" r="5"/><line x1="10" y1="10" x2="14.5" y2="14.5"/></svg>
+      </span>
+      <input type="search" id="searchInput" placeholder="Search parishes, cities, dioceses…" />
+      <button id="filter-toggle" class="search-btn" title="Filters (F)">
+        <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="1" y1="4" x2="15" y2="4"/><line x1="3" y1="8" x2="13" y2="8"/><line x1="5" y1="12" x2="11" y2="12"/></svg>
+      </button>
+      <button id="layers-toggle" class="search-btn" title="Layers (L)">
+        <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M8 1 L1 5.5 L8 10 L15 5.5 Z"/><path d="M1 8.5 L8 13 L15 8.5"/><path d="M1 11 L8 15.5 L15 11"/></svg>
+      </button>
     </div>
-    
-    <h4>Layers</h4>
-    <div class="controls-section">
+    <div id="filter-chips"></div>
+    <div id="filter-panel" class="dropdown-panel">
+      <div class="filter-grid">
+        <select id="filterDiocese"><option value="">All Dioceses</option></select>
+        <select id="filterPatriarchate"><option value="">All Patriarchates</option></select>
+        <select id="filterState"><option value="">All States</option></select>
+        <select id="filterImportance">
+          <option value="">All Types</option>
+          <option value="cathedral">Cathedrals</option>
+          <option value="monastery">Monasteries</option>
+          <option value="seminary">Seminaries</option>
+          <option value="notable">Notable</option>
+        </select>
+      </div>
+      <div class="filter-actions">
+        <button id="resetFilters" class="action-btn secondary">Clear All</button>
+        <button id="exportVisible" class="action-btn primary">Export CSV</button>
+      </div>
+    </div>
+    <div id="layers-panel" class="dropdown-panel">
       <label><input type="checkbox" id="showDioceses" checked> Diocese boundaries</label>
       <label><input type="checkbox" id="showParishes" checked> Parish territories</label>
       <label><input type="checkbox" id="showPoints" checked> Parish markers</label>
       <label><input type="checkbox" id="showHeatmap"> Density heatmap</label>
       <label><input type="checkbox" id="showLabels"> Parish labels</label>
       <label><input type="checkbox" id="highlightImportant" checked> Highlight notable</label>
-      <label><input type="checkbox" id="showStats"> Statistics panel</label>
-      <label><input type="checkbox" id="showParishList"> Parish list panel</label>
-    </div>
-    
-    <div class="controls-actions">
-      <button id="resetFilters" class="secondary">Reset Filters</button>
-      <button id="exportVisible">Export Visible</button>
+      <label><input type="checkbox" id="showStats"> Statistics</label>
+      <label><input type="checkbox" id="showParishList"> Parish list</label>
     </div>
   </div>
 
@@ -871,8 +944,9 @@
         <p>Explore the territorial jurisdictions of Orthodox Christian parishes, dioceses, and patriarchates across North America.</p>
         <ul class="splash-list">
           <li>Click any region or marker for detailed information</li>
-          <li>Use the controls panel (top-right) to filter and toggle layers</li>
+          <li>Use the search bar to find parishes, filter by diocese, and toggle map layers</li>
           <li>Click legend items to show or hide jurisdictions</li>
+          <li>Keyboard: <b>/</b> search, <b>F</b> filters, <b>L</b> layers</li>
         </ul>
       </div>
       <div id="splash-footer">
@@ -928,12 +1002,41 @@
   // Show splash on load
   showSplash();
 
-  // ── Controls toggle ─────────────────────────
-  const controlsToggle = document.getElementById("controls-toggle");
-  const controlsPanel = document.querySelector(".controls-panel");
-  controlsToggle.addEventListener("click", () => {
-    controlsPanel.classList.toggle("open");
-    controlsToggle.classList.toggle("active");
+  // ── Search bar panel toggles ─────────────────
+  const filterToggle = document.getElementById("filter-toggle");
+  const layersToggle = document.getElementById("layers-toggle");
+  const filterPanel = document.getElementById("filter-panel");
+  const layersPanel = document.getElementById("layers-panel");
+
+  function closeAllPanels() {
+    filterPanel.classList.remove("open");
+    layersPanel.classList.remove("open");
+    filterToggle.classList.remove("active");
+    layersToggle.classList.remove("active");
+  }
+
+  filterToggle.addEventListener("click", () => {
+    const opening = !filterPanel.classList.contains("open");
+    closeAllPanels();
+    if (opening) {
+      filterPanel.classList.add("open");
+      filterToggle.classList.add("active");
+    }
+  });
+
+  layersToggle.addEventListener("click", () => {
+    const opening = !layersPanel.classList.contains("open");
+    closeAllPanels();
+    if (opening) {
+      layersPanel.classList.add("open");
+      layersToggle.classList.add("active");
+    }
+  });
+
+  // Close panels when clicking outside the search bar
+  document.addEventListener("click", (e) => {
+    const bar = document.getElementById("search-bar");
+    if (!bar.contains(e.target)) closeAllPanels();
   });
 
   // ── Legend collapse ─────────────────────────
@@ -1371,18 +1474,59 @@
     });
   }
 
+  // ── Filter chip management ──────────────────
+  function updateFilterChips() {
+    const container = document.getElementById("filter-chips");
+    container.innerHTML = '';
+    const chips = [];
+
+    if (currentFilters.search) {
+      chips.push({ label: `"${currentFilters.search}"`, key: 'search' });
+    }
+    if (currentFilters.diocese) {
+      chips.push({ label: currentFilters.diocese, key: 'diocese' });
+    }
+    if (currentFilters.patriarchate) {
+      chips.push({ label: currentFilters.patriarchate, key: 'patriarchate' });
+    }
+    if (currentFilters.state) {
+      chips.push({ label: currentFilters.state, key: 'state' });
+    }
+    if (currentFilters.importance) {
+      const labels = { cathedral: 'Cathedrals', monastery: 'Monasteries', seminary: 'Seminaries', notable: 'Notable' };
+      chips.push({ label: labels[currentFilters.importance] || currentFilters.importance, key: 'importance' });
+    }
+
+    chips.forEach(c => {
+      const el = document.createElement('span');
+      el.className = 'filter-chip';
+      el.innerHTML = `${escapeHtml(c.label)} <span class="chip-remove">✕</span>`;
+      el.addEventListener('click', () => {
+        currentFilters[c.key] = '';
+        if (c.key === 'search') document.getElementById('searchInput').value = '';
+        if (c.key === 'diocese') document.getElementById('filterDiocese').value = '';
+        if (c.key === 'patriarchate') document.getElementById('filterPatriarchate').value = '';
+        if (c.key === 'state') document.getElementById('filterState').value = '';
+        if (c.key === 'importance') document.getElementById('filterImportance').value = '';
+        applyFilters();
+      });
+      container.appendChild(el);
+    });
+
+    container.classList.toggle('has-chips', chips.length > 0);
+  }
+
   // ── Attach event listeners ──────────────────
   function attachEventListeners() {
     // Search
     const searchInput = document.getElementById("searchInput");
+    let searchDebounce = null;
     searchInput.addEventListener("input", (e) => {
-      currentFilters.search = e.target.value.toLowerCase();
-      if (currentFilters.search) {
-        searchInput.classList.add("search-active");
-      } else {
-        searchInput.classList.remove("search-active");
-      }
-      applyFilters();
+      clearTimeout(searchDebounce);
+      searchDebounce = setTimeout(() => {
+        currentFilters.search = e.target.value.toLowerCase();
+        applyFilters();
+      }, 180);
     });
 
     // Dropdowns
@@ -1406,9 +1550,7 @@
     // Reset filters
     document.getElementById("resetFilters").addEventListener("click", () => {
       currentFilters = { search: '', diocese: '', patriarchate: '', state: '', importance: '' };
-      const searchInput = document.getElementById("searchInput");
-      searchInput.value = '';
-      searchInput.classList.remove("search-active");
+      document.getElementById("searchInput").value = '';
       document.getElementById("filterDiocese").value = '';
       document.getElementById("filterPatriarchate").value = '';
       document.getElementById("filterState").value = '';
@@ -1443,15 +1585,31 @@
 
     // Keyboard shortcuts
     document.addEventListener("keydown", (e) => {
-      // / - Focus search
-      if (e.key === "/" && document.activeElement.tagName !== "INPUT") {
+      if (modal.classList.contains("show") || !splashOverlay.classList.contains("hidden")) return;
+      // / or Ctrl+K — Focus search
+      if ((e.key === "/" || (e.ctrlKey && e.key === "k")) && document.activeElement.tagName !== "INPUT") {
         e.preventDefault();
         document.getElementById("searchInput").focus();
       }
-      // Esc - Clear filters (only if modal is not open)
-      if (e.key === "Escape" && !modal.classList.contains("show")) {
+      // F — Toggle filters
+      if (e.key === "f" && document.activeElement.tagName !== "INPUT") {
+        e.preventDefault();
+        filterToggle.click();
+      }
+      // L — Toggle layers
+      if (e.key === "l" && document.activeElement.tagName !== "INPUT") {
+        e.preventDefault();
+        layersToggle.click();
+      }
+      // Esc — Close panels or clear filters
+      if (e.key === "Escape") {
+        if (filterPanel.classList.contains("open") || layersPanel.classList.contains("open")) {
+          closeAllPanels();
+          return;
+        }
         if (document.activeElement === document.getElementById("searchInput")) {
           document.getElementById("searchInput").blur();
+          return;
         }
         if (currentFilters.search || currentFilters.diocese || currentFilters.patriarchate || 
             currentFilters.state || currentFilters.importance) {
@@ -1501,13 +1659,13 @@
                        currentFilters.state || currentFilters.importance;
     if (hasFilters) {
       document.getElementById("stats").innerHTML = 
-        `<span style="color:var(--gold)">🔍 ${filteredPoints.features.length}</span> of ${metaData.stats.totalFeatures} parishes · ` +
-        `<span style="font-size:0.7rem;opacity:0.7">filters active</span>`;
+        `<span style="color:var(--gold)">${filteredPoints.features.length}</span> of ${metaData.stats.totalFeatures} parishes`;
     } else {
       document.getElementById("stats").textContent =
         `${metaData.stats.totalFeatures} parishes · ${metaData.stats.dioceses} dioceses · ${metaData.stats.clusters} clusters`;
     }
 
+    updateFilterChips();
     updateLayers();
     updateStats();
     updateParishList();
