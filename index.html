@@ -1,0 +1,2236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Orthodox Jurisdiction Map (Static Snapshot)</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <!-- MapLibre GL (free, no API key) -->
+  <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+
+  <!-- deck.gl standalone -->
+  <script src="https://unpkg.com/deck.gl@9.1.7/dist.min.js"></script>
+
+  <!-- Turf.js for client-side geo operations (overlap detection) -->
+  <script src="https://unpkg.com/@turf/turf@7.1.0/turf.min.js"></script>
+
+  <style>
+    :root {
+      --gold: #c5a344;
+      --navy: #1a2332;
+      --navy-light: #253346;
+      --white: #fafafa;
+      --text: #222;
+      --text-muted: #889;
+      --label: #9aa8b8;
+      --border: rgba(255,255,255,0.08);
+      --panel-bg: rgba(20,26,36,0.92);
+      --radius: 8px;
+      --font: "Space Grotesk", "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 100%; height: 100%; overflow: hidden; }
+
+    body {
+      font-family: var(--font);
+      background: #111;
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ─────────────────────────────── */
+    header {
+      background: var(--navy);
+      color: #fff;
+      padding: 0 1.5rem;
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      z-index: 20;
+      position: relative;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+    header h1 {
+      font-size: 1rem;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+    }
+    header h1 span { color: var(--gold); }
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .header-stats {
+      font-size: 0.78rem;
+      color: #aab;
+    }
+    .nav-links a {
+      color: #ccd;
+      text-decoration: none;
+      font-size: 0.78rem;
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+      transition: color 0.15s;
+    }
+    .nav-links a:hover {
+      color: #fff;
+    }
+
+    /* ── Map container ──────────────────────── */
+    #map-container {
+      position: relative;
+      width: 100%;
+      flex: 1;
+      min-height: 0;
+    }
+    #map { width: 100%; height: 100%; }
+
+    /* ── Legend ──────────────────────────────── */
+    #legend {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: rgba(16,20,28,0.88);
+      backdrop-filter: blur(8px);
+      color: #fff;
+      border-radius: var(--radius);
+      border: 1px solid rgba(255,255,255,0.06);
+      font-size: 0.76rem;
+      max-height: calc(100vh - 120px);
+      overflow-y: auto;
+      z-index: 15;
+      min-width: 160px;
+      transition: all 0.2s ease;
+    }
+    #legend.collapsed #legend-items { display: none; }
+    #legend.collapsed { min-width: 0; }
+    .legend-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px 6px;
+      cursor: pointer;
+      user-select: none;
+    }
+    #legend h3 {
+      font-size: 0.72rem;
+      margin: 0;
+      color: var(--label);
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .legend-toggle {
+      background: none;
+      border: none;
+      color: var(--label);
+      font-size: 0.7rem;
+      cursor: pointer;
+      padding: 2px;
+      transition: transform 0.2s;
+    }
+    #legend.collapsed .legend-toggle { transform: rotate(180deg); }
+    #legend-items { padding: 0 14px 10px; }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 0;
+      cursor: pointer;
+      opacity: 1;
+      transition: opacity 0.15s;
+    }
+    .legend-item:hover { opacity: 0.7; }
+    .legend-item.hidden { opacity: 0.3; text-decoration: line-through; }
+    .legend-swatch {
+      width: 12px;
+      height: 12px;
+      border-radius: 2px;
+      flex-shrink: 0;
+    }
+
+    /* ── Controls toggle button ─────────────── */
+    #controls-toggle {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      z-index: 16;
+      background: rgba(16,20,28,0.88);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255,255,255,0.06);
+      color: var(--label);
+      width: 36px;
+      height: 36px;
+      border-radius: var(--radius);
+      cursor: pointer;
+      font-size: 1.05rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s;
+    }
+    #controls-toggle:hover { color: #fff; background: var(--navy-light); }
+    #controls-toggle.active { color: var(--gold); }
+
+    /* ── Controls drawer ────────────────────── */
+    .controls-panel {
+      position: absolute;
+      top: 52px;
+      right: 10px;
+      background: rgba(16,20,28,0.92);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255,255,255,0.06);
+      color: #fff;
+      padding: 14px;
+      border-radius: var(--radius);
+      font-size: 0.76rem;
+      z-index: 15;
+      display: none;
+      flex-direction: column;
+      gap: 12px;
+      max-height: calc(100vh - 160px);
+      overflow-y: auto;
+      min-width: 210px;
+      transform-origin: top right;
+      animation: panelIn 0.12s ease-out;
+    }
+    .controls-panel.open { display: flex; }
+    @keyframes panelIn {
+      from { opacity: 0; transform: scale(0.95) translateY(-4px); }
+      to { opacity: 1; transform: scale(1) translateY(0); }
+    }
+    .controls-panel h4 {
+      font-size: 0.72rem;
+      color: var(--label);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-weight: 500;
+      padding-bottom: 4px;
+      margin: 0;
+    }
+    .controls-panel label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      padding: 2px 0;
+      color: #ccd;
+    }
+    .controls-panel input[type="checkbox"] { accent-color: var(--gold); }
+    .controls-panel input[type="text"],
+    .controls-panel input[type="search"],
+    .controls-panel select {
+      width: 100%;
+      padding: 6px 10px;
+      border: 1px solid rgba(255,255,255,0.1);
+      background: rgba(255,255,255,0.06);
+      color: #fff;
+      border-radius: 6px;
+      font-size: 0.78rem;
+      font-family: inherit;
+      transition: border-color 0.15s;
+    }
+    .controls-panel input:focus,
+    .controls-panel select:focus {
+      outline: none;
+      border-color: rgba(197,163,68,0.5);
+    }
+    .controls-panel input[type="text"]::placeholder,
+    .controls-panel input[type="search"]::placeholder {
+      color: #556;
+    }
+    .controls-panel select { cursor: pointer; }
+    .controls-panel select option { background: var(--navy); color: #fff; }
+    .controls-panel button {
+      padding: 6px 12px;
+      background: var(--gold);
+      color: var(--navy);
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 0.78rem;
+      transition: all 0.15s;
+    }
+    .controls-panel button:hover { opacity: 0.9; }
+    .controls-panel button.secondary {
+      background: rgba(255,255,255,0.1);
+      color: #aab;
+    }
+    .controls-section { display: flex; flex-direction: column; gap: 4px; }
+    .controls-actions { display: flex; gap: 8px; }
+    .controls-actions button { flex: 1; }
+    
+    /* ── Statistics panel ───────────────────── */
+    #stats-panel {
+      position: absolute;
+      bottom: 10px;
+      right: 10px;
+      background: rgba(16,20,28,0.88);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255,255,255,0.06);
+      color: #fff;
+      padding: 10px 14px;
+      border-radius: var(--radius);
+      font-size: 0.74rem;
+      z-index: 15;
+      min-width: 170px;
+      display: none;
+    }
+    #stats-panel.visible { display: block; }
+    #stats-panel h4 {
+      font-size: 0.72rem;
+      color: var(--label);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-weight: 500;
+      margin-bottom: 8px;
+    }
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 2px 0;
+      gap: 12px;
+    }
+    .stat-label { color: #8899aa; }
+    .stat-value { font-weight: 600; color: #fff; }
+    .stat-section-label {
+      margin-top: 8px;
+      font-size: 0.68rem;
+      color: #7e8a98;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    
+    /* ── Parish list panel ──────────────────── */
+    #parish-list-panel {
+      position: absolute;
+      bottom: 10px;
+      left: 10px;
+      background: rgba(16,20,28,0.88);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255,255,255,0.06);
+      color: #fff;
+      padding: 10px 14px;
+      border-radius: var(--radius);
+      font-size: 0.74rem;
+      z-index: 15;
+      max-width: 300px;
+      max-height: 260px;
+      overflow-y: auto;
+      display: none;
+    }
+    #parish-list-panel.visible { display: block; }
+    #parish-list-panel h4 {
+      font-size: 0.72rem;
+      color: var(--label);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-weight: 500;
+      margin-bottom: 8px;
+      position: sticky;
+      top: 0;
+      background: rgba(16,20,28,0.95);
+      padding-bottom: 6px;
+      z-index: 1;
+    }
+    .parish-list-item {
+      padding: 6px 4px;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .parish-list-item:hover { background: rgba(255,255,255,0.08); }
+    .parish-list-item-name {
+      font-weight: 600;
+      color: #fff;
+      margin-bottom: 2px;
+    }
+    .parish-list-item-details {
+      font-size: 0.68rem;
+      color: #8899aa;
+    }
+    
+    /* ── Search highlight ────────────────────── */
+    .search-active {
+      animation: pulse 2s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { border-color: rgba(197,163,68,0.3); }
+      50% { border-color: rgba(197,163,68,0.8); }
+    }
+    
+    @media (max-width: 900px) {
+      #legend, .controls-panel { max-width: 44vw; }
+    }
+    @media (max-width: 640px) {
+      header { padding: 0.6rem 1rem; }
+      #legend, .controls-panel {
+        font-size: 0.72rem;
+        max-width: 88vw;
+        max-height: 40vh;
+      }
+      .header-stats { display: none; }
+    }
+
+    /* ── Tooltip ─────────────────────────────── */
+    #tooltip {
+      position: absolute;
+      pointer-events: none;
+      background: rgba(16, 20, 28, 0.92);
+      backdrop-filter: blur(8px);
+      color: #b0b8c4;
+      padding: 10px 14px;
+      border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.07);
+      box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+      font-size: 0.76rem;
+      line-height: 1.5;
+      z-index: 20;
+      max-width: 260px;
+      display: none;
+      opacity: 0;
+      transform: translateY(3px);
+      transition: opacity 0.12s, transform 0.12s;
+    }
+    #tooltip.visible { opacity: 1; transform: translateY(0); }
+    .tt-name { color: #e8ecf0; font-weight: 600; font-size: 0.82rem; margin-bottom: 2px; }
+    .tt-badge {
+      display: inline-block;
+      font-size: 0.56rem;
+      padding: 1px 5px;
+      border-radius: 3px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      margin-left: 5px;
+      vertical-align: middle;
+    }
+    .tt-badge.cathedral { background: rgba(255,215,0,0.12); color: #e8c840; }
+    .tt-badge.monastery { background: rgba(140,80,200,0.12); color: #c8a0f0; }
+    .tt-badge.seminary  { background: rgba(60,180,120,0.12); color: #6dc898; }
+    .tt-badge.notable   { background: rgba(100,180,255,0.12); color: #88c8f0; }
+    .tt-meta { color: #7e8a98; font-size: 0.72rem; }
+    .tt-hint { color: #4e5868; font-size: 0.64rem; margin-top: 6px; }
+
+    /* ── Modal ───────────────────────────────── */
+    #modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(6px);
+      z-index: 1000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      animation: fadeIn 0.2s;
+    }
+    #modal-overlay.show {
+      display: flex;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    #modal-content {
+      background: var(--navy);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 12px;
+      max-width: 600px;
+      width: 90%;
+      max-height: 85vh;
+      overflow-y: auto;
+      box-shadow: 0 12px 48px rgba(0,0,0,0.6);
+      color: #fff;
+      animation: slideIn 0.25s ease-out;
+    }
+    @keyframes slideIn {
+      from { transform: translateY(12px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+    #modal-header {
+      padding: 20px 24px;
+      border-bottom: 1px solid rgba(255,255,255,0.12);
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    #modal-title {
+      flex: 1;
+      font-size: 1.4rem;
+      font-weight: 700;
+      color: var(--gold);
+      line-height: 1.3;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    #modal-close {
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.15);
+      color: #ccc;
+      width: 32px;
+      height: 32px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 1.2rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s;
+      flex-shrink: 0;
+    }
+    #modal-close:hover {
+      background: rgba(255,100,100,0.2);
+      border-color: rgba(255,100,100,0.4);
+      color: #ff6666;
+    }
+    #modal-body {
+      padding: 20px 24px;
+      font-size: 0.9rem;
+      line-height: 1.7;
+    }
+    .modal-section {
+      margin-bottom: 20px;
+    }
+    .modal-section:last-child {
+      margin-bottom: 0;
+    }
+    .modal-section-title {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #7e8a98;
+      margin-bottom: 10px;
+      font-weight: 600;
+    }
+    .modal-row {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 8px;
+      align-items: flex-start;
+    }
+    .modal-row:last-child {
+      margin-bottom: 0;
+    }
+    .modal-label {
+      color: #7899bb;
+      flex-shrink: 0;
+      min-width: 100px;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .modal-value {
+      flex: 1;
+      color: #dde;
+    }
+    .modal-seat-card {
+      padding: 8px 10px;
+      margin-bottom: 8px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 6px;
+    }
+    .modal-seat-card:last-child { margin-bottom: 0; }
+    .modal-seat-name {
+      font-weight: 600;
+      color: #dde;
+      margin-bottom: 6px;
+    }
+    .modal-seat-notes {
+      font-size: 0.8rem;
+      color: #7e8a98;
+      margin-top: 4px;
+      font-style: italic;
+    }
+    .modal-footer-meta {
+      font-size: 0.78rem;
+      color: #7e8a98;
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .modal-badge {
+      display: inline-block;
+      font-size: 0.75rem;
+      padding: 3px 10px;
+      border-radius: 5px;
+      margin-top: 6px;
+      letter-spacing: 0.03em;
+      font-weight: 600;
+      border: 1px solid;
+    }
+    .modal-patriarchate {
+      background: rgba(197,163,68,0.2);
+      color: #dca;
+      border-color: rgba(197,163,68,0.3);
+    }
+    .modal-importance {
+      text-transform: uppercase;
+      margin-left: 8px;
+    }
+    .modal-importance.cathedral  { background: rgba(255,215,0,0.2); color: #ffd700; border-color: rgba(255,215,0,0.4); }
+    .modal-importance.monastery  { background: rgba(140,80,200,0.2); color: #d8b0ff; border-color: rgba(140,80,200,0.4); }
+    .modal-importance.seminary   { background: rgba(60,180,120,0.2); color: #7ddfb0; border-color: rgba(60,180,120,0.4); }
+    .modal-importance.notable    { background: rgba(100,180,255,0.2); color: #99d5ff; border-color: rgba(100,180,255,0.4); }
+    .modal-link {
+      color: #6cb4ee;
+      text-decoration: none;
+      transition: color 0.15s;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .modal-link:hover {
+      color: #8dcfff;
+      text-decoration: underline;
+    }
+    .modal-divider {
+      border: none;
+      border-top: 1px solid rgba(255,255,255,0.12);
+      margin: 16px 0;
+    }
+    .modal-coords {
+      font-family: 'Courier New', monospace;
+      font-size: 0.8rem;
+      color: #889;
+      background: rgba(255,255,255,0.06);
+      padding: 4px 8px;
+      border-radius: 4px;
+      display: inline-block;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    .modal-action-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 14px;
+      background: rgba(197,163,68,0.15);
+      border: 1px solid rgba(197,163,68,0.3);
+      border-radius: 6px;
+      color: var(--gold);
+      text-decoration: none;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+      margin-right: 8px;
+      margin-top: 8px;
+    }
+    .modal-action-btn:hover {
+      background: rgba(197,163,68,0.25);
+      border-color: rgba(197,163,68,0.5);
+    }
+
+    /* ── Clergy styling ─────────────────────── */
+    .clergy-container {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .clergy-member {
+      background: rgba(255,255,255,0.06);
+      border-left: 3px solid var(--gold);
+      border-radius: 4px;
+      padding: 8px 10px;
+      font-size: 0.85rem;
+      line-height: 1.5;
+    }
+    .clergy-rank {
+      color: var(--gold);
+      font-weight: 600;
+      display: inline;
+      margin-right: 4px;
+    }
+    .clergy-name {
+      color: #dde;
+      font-weight: 500;
+    }
+    .clergy-role {
+      color: #8899aa;
+      font-size: 0.8rem;
+      font-style: italic;
+      display: block;
+      margin-top: 2px;
+    }
+
+    /* ── Loading overlay ─────────────────────── */
+    #loading-overlay {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(17,17,17,0.85);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 30;
+      color: #fff;
+      font-size: 1rem;
+    }
+    .spinner {
+      display: inline-block;
+      width: 24px; height: 24px;
+      border: 3px solid #333;
+      border-top-color: var(--gold);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      margin-right: 0.5rem;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Splash Modal ───────────────────────────── */
+    #splash-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(6px);
+      z-index: 2000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #splash-overlay.hidden { display: none; }
+    #splash-content {
+      background: var(--navy);
+      border-radius: 12px;
+      max-width: 460px;
+      width: 90%;
+      color: #fff;
+      overflow: hidden;
+    }
+    #splash-header {
+      padding: 28px 28px 0;
+    }
+    #splash-title {
+      font-size: 1.4rem;
+      font-weight: 700;
+      color: var(--gold);
+    }
+    #splash-body {
+      padding: 16px 28px 24px;
+      font-size: 0.88rem;
+      line-height: 1.7;
+      color: #bbc;
+    }
+    #splash-body p { margin-bottom: 14px; }
+    .splash-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    .splash-list li {
+      padding: 6px 0 6px 20px;
+      position: relative;
+      color: #dde;
+    }
+    .splash-list li::before {
+      content: '\2192';
+      position: absolute;
+      left: 0;
+      color: var(--gold);
+    }
+    #splash-footer {
+      padding: 16px 28px;
+      border-top: 1px solid rgba(255,255,255,0.08);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .splash-checkbox {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.8rem;
+      color: #889;
+    }
+    .splash-checkbox input { accent-color: var(--gold); cursor: pointer; }
+    #splash-close-btn {
+      padding: 8px 20px;
+      background: var(--gold);
+      color: var(--navy);
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 0.88rem;
+    }
+    #splash-close-btn:hover { opacity: 0.9; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>☦ <span>Orthodox</span> Jurisdiction Map</h1>
+  <div class="header-right">
+    <div class="header-stats" id="stats">Loading…</div>
+    <nav class="nav-links">
+      <a href="./index.html">Static Snapshot</a>
+    </nav>
+  </div>
+</header>
+
+<div id="map-container">
+  <div id="map"></div>
+  <div id="loading-overlay"><span class="spinner"></span> Loading map data…</div>
+
+  <div id="legend">
+    <div class="legend-header">
+      <h3>Jurisdictions</h3>
+      <button class="legend-toggle" id="legend-toggle" title="Collapse">&#9662;</button>
+    </div>
+    <div id="legend-items"></div>
+  </div>
+
+  <button id="controls-toggle" title="Controls">&#9881;</button>
+  <div class="controls-panel">
+    <h4>Filters</h4>
+    <div class="controls-section">
+      <input type="search" id="searchInput" placeholder="Search parishes, cities..." />
+      <select id="filterDiocese">
+        <option value="">All Dioceses</option>
+      </select>
+      <select id="filterPatriarchate">
+        <option value="">All Patriarchates</option>
+      </select>
+      <select id="filterState">
+        <option value="">All States</option>
+      </select>
+      <select id="filterImportance">
+        <option value="">All Parishes</option>
+        <option value="cathedral">Cathedrals</option>
+        <option value="monastery">Monasteries</option>
+        <option value="seminary">Seminaries</option>
+        <option value="notable">Notable</option>
+      </select>
+    </div>
+    
+    <h4>Layers</h4>
+    <div class="controls-section">
+      <label><input type="checkbox" id="showDioceses" checked> Diocese boundaries</label>
+      <label><input type="checkbox" id="showParishes" checked> Parish territories</label>
+      <label><input type="checkbox" id="showPoints" checked> Parish markers</label>
+      <label><input type="checkbox" id="showHeatmap"> Density heatmap</label>
+      <label><input type="checkbox" id="showLabels"> Parish labels</label>
+      <label><input type="checkbox" id="highlightImportant" checked> Highlight notable</label>
+      <label><input type="checkbox" id="showStats"> Statistics panel</label>
+      <label><input type="checkbox" id="showParishList"> Parish list panel</label>
+    </div>
+    
+    <div class="controls-actions">
+      <button id="resetFilters" class="secondary">Reset Filters</button>
+      <button id="exportVisible">Export Visible</button>
+    </div>
+  </div>
+
+  <div id="stats-panel">
+    <h4>Statistics</h4>
+    <div id="stats-content"></div>
+  </div>
+
+  <div id="parish-list-panel">
+    <h4>Visible Parishes</h4>
+    <div id="parish-list-content"></div>
+  </div>
+
+  <div id="tooltip"></div>
+
+  <!-- Modal -->
+  <div id="modal-overlay">
+    <div id="modal-content">
+      <div id="modal-header">
+        <div id="modal-title"></div>
+        <button id="modal-close" title="Close (Esc)">✕</button>
+      </div>
+      <div id="modal-body"></div>
+    </div>
+  </div>
+
+  <!-- Splash Modal -->
+  <div id="splash-overlay">
+    <div id="splash-content">
+      <div id="splash-header">
+        <div id="splash-title">Orthodox Jurisdiction Map</div>
+      </div>
+      <div id="splash-body">
+        <p>Explore the territorial jurisdictions of Orthodox Christian parishes, dioceses, and patriarchates across North America.</p>
+        <ul class="splash-list">
+          <li>Click any region or marker for detailed information</li>
+          <li>Use the controls panel (top-right) to filter and toggle layers</li>
+          <li>Click legend items to show or hide jurisdictions</li>
+        </ul>
+      </div>
+      <div id="splash-footer">
+        <label class="splash-checkbox">
+          <input type="checkbox" id="splash-no-show" />
+          Don't show again
+        </label>
+        <button id="splash-close-btn">Explore Map</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  console.log("Map initialization script started");
+  
+  // ── Splash Modal ────────────────────────────
+  const splashOverlay = document.getElementById("splash-overlay");
+  const splashCloseBtn = document.getElementById("splash-close-btn");
+  const splashNoShow = document.getElementById("splash-no-show");
+  const SPLASH_DISMISSED_KEY = "orthocalendar_splash_dismissed";
+
+  function closeSplash() {
+    splashOverlay.classList.add("hidden");
+    if (splashNoShow.checked) {
+      localStorage.setItem(SPLASH_DISMISSED_KEY, "true");
+    }
+  }
+
+  function showSplash() {
+    if (!localStorage.getItem(SPLASH_DISMISSED_KEY)) {
+      splashOverlay.classList.remove("hidden");
+    } else {
+      splashOverlay.classList.add("hidden");
+    }
+  }
+
+  splashCloseBtn.addEventListener("click", closeSplash);
+
+  splashOverlay.addEventListener("click", (e) => {
+    if (e.target === splashOverlay) {
+      closeSplash();
+    }
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !splashOverlay.classList.contains("hidden")) {
+      closeSplash();
+    }
+  });
+
+  // Show splash on load
+  showSplash();
+
+  // ── Controls toggle ─────────────────────────
+  const controlsToggle = document.getElementById("controls-toggle");
+  const controlsPanel = document.querySelector(".controls-panel");
+  controlsToggle.addEventListener("click", () => {
+    controlsPanel.classList.toggle("open");
+    controlsToggle.classList.toggle("active");
+  });
+
+  // ── Legend collapse ─────────────────────────
+  const legendToggle = document.getElementById("legend-toggle");
+  const legend = document.getElementById("legend");
+  legendToggle.addEventListener("click", () => {
+    legend.classList.toggle("collapsed");
+    legendToggle.textContent = legend.classList.contains("collapsed") ? "\u25B8" : "\u25BE";
+  });
+  
+  // ── State ───────────────────────────────────
+  let dioceseData = null;
+  let parishPolyData = null;
+  let pointsData = null;
+  let metaData = null;
+  let hiddenJurisdictions = new Set();
+  let deckInstance = null;
+  let currentZoom = 4;
+  let hoveredDiocese = null; // entity_id of hovered diocese
+  let currentFilters = {
+    search: '',
+    diocese: '',
+    patriarchate: '',
+    state: '',
+    importance: ''
+  };
+  let filteredPoints = null;
+  let mapBounds = null;
+
+  // Importance styling: color outlines & sizing for notable parishes
+  const IMPORTANCE_COLORS = {
+    cathedral: [255, 215, 0, 255],    // gold
+    monastery: [180, 100, 255, 255],  // purple
+    seminary:  [60, 200, 130, 255],   // green
+    notable:   [100, 180, 255, 255],  // blue
+  };
+  const IMPORTANCE_LABELS = {
+    cathedral: "Cathedral",
+    monastery: "Monastery",
+    seminary:  "Seminary",
+    notable:   "Notable",
+  };
+
+  const tooltip = document.getElementById("tooltip");
+  let hideTooltipTimeout = null;
+
+  // ── Helper function: Format clergy information ──
+  function formatClergyDisplay(clergyStr) {
+    if (!clergyStr || typeof clergyStr !== 'string') return '';
+    
+    // First split by known delimiters (semicolons, newlines)
+    let rawEntries = clergyStr.split(/[;\n]+/).map(s => s.trim()).filter(s => s.length > 0);
+    
+    const members = [];
+    
+    rawEntries.forEach(entry => {
+      // Don't split entries that have balanced parentheses with minimal content before them
+      // Check if this might be a partial entry needing reconstruction
+      
+      // Look for unmatched parentheses that might indicate the entry was split mid-role
+      const openParens = (entry.match(/\(/g) || []).length;
+      const closeParens = (entry.match(/\)/g) || []).length;
+      
+      if (openParens === 0 && closeParens > 0) {
+        // This looks like it starts with a closing paren (like "Reader)") - it's a broken role
+        // Skip it for now as it will be handled by the next entry
+        return;
+      }
+      
+      if (openParens > closeParens) {
+        // Unclosed parenthesis - this entry probably continues to the next
+        // We'll treat it as-is for now
+        members.push(entry);
+        return;
+      }
+      
+      // For entries with complete parentheses, look for multiple clergy titles at boundaries
+      // But ONLY outside of parenthetical content
+      
+      // Remove all parenthetical content to find title boundaries
+      const withoutParens = entry.replace(/\([^)]*\)/g, '');
+      
+      // Find all title positions in the text without parentheses
+      const clergyTitles = /\b(V\.\s*Rev|Rev|Archpriest|Archdeacon|Priest|Protodn|Protodeacon|Hierodeacon|Deacon|Subdeacon|Reader|Rdr|Fr\.|Fr|Father|Mr\.|Mrs\.|Ms\.|Dr\.|Pastor|Bishop|Archbishop|Patriarch)\b/gi;
+      
+      let matches = [];
+      let match;
+      clergyTitles.lastIndex = 0;
+      while ((match = clergyTitles.exec(withoutParens)) !== null) {
+        matches.push(match.index);
+      }
+      
+      if (matches.length <= 1) {
+        // Only one or no title found, keep entry as is
+        members.push(entry);
+      } else {
+        // Multiple titles found - need to split the original entry at these positions
+        // This is tricky because we need to map positions in withoutParens back to original
+        
+        // Use a different approach: split the entry more intelligently
+        // Look for patterns like "Title Name (Role) Title Name (Role)"
+        
+        const churchTitleRegex = /\b(V\.\s*Rev|Rev|Archpriest|Archdeacon|Priest|Protodn|Protodeacon|Hierodeacon|Deacon|Subdeacon|Reader|Rdr|Fr\.|Fr|Father|Mr\.|Mrs\.|Ms\.|Dr\.|Pastor|Bishop|Archbishop|Patriarch)\s+([A-Za-z.\s()]+?)(?=\b(?:V\.\s*Rev|Rev|Archpriest|Archdeacon|Priest|Protodn|Protodeacon|Hierodeacon|Deacon|Subdeacon|Reader|Rdr|Fr\.|Fr|Father|Mr\.|Mrs\.|Ms\.|Dr\.|Pastor|Bishop|Archbishop|Patriarch)\b|$)/gi;
+        
+        let piece;
+        churchTitleRegex.lastIndex = 0;
+        while ((piece = churchTitleRegex.exec(entry)) !== null) {
+          const extracted = piece[0].trim();
+          if (extracted.length > 0) {
+            members.push(extracted);
+          }
+        }
+        
+        // If regex didn't find anything, fall back to original
+        if (members.length === 0 || members[members.length - 1] !== entry) {
+          members.push(entry);
+        }
+      }
+    });
+    
+    // Clean up members - remove duplicates and empty entries
+    const cleanMembers = [...new Set(members)].filter(m => m && m.trim().length > 0);
+    
+    if (cleanMembers.length === 0) return '';
+
+    const containerClass = 'clergy-container';
+    const memberClass = 'clergy-member';
+    const rankClass = 'clergy-rank';
+    const nameClass = 'clergy-name';
+    const roleClass = 'clergy-role';
+
+    const memberHtml = cleanMembers.map(member => {
+      // Parse: "RANK NAME (ROLE)" format
+      // Examples:
+      //   "V. Rev. John Smith (Rector)"
+      //   "Priest Peter James"
+      //   "Deacon Nathan Reff"
+      //   "Rdr. James Myers (Reader)"
+      
+      const roleMatch = member.match(/\(([^)]+)\)$/);
+      const role = roleMatch ? roleMatch[1] : '';
+      const nameAndRank = roleMatch ? member.substring(0, roleMatch.index).trim() : member;
+      
+      // Try to identify rank (titles like "V. Rev.", "Rev.", "Deacon", "Priest", etc.)
+      const rankMatch = nameAndRank.match(/^(V\.\s*Rev\.|Rev\.|Archpriest|Archdeacon|Priest|Protodn\.|Protodeacon|Hierodeacon|Deacon|Subdeacon|Reader|Rdr\.|Rdr|Fr\.|Fr|Father|Mr\.|Mrs\.|Ms\.|Dr\.|Pastor|Bishop|Archbishop|Patriarch)\s+/i);
+      const rank = rankMatch ? rankMatch[1].replace(/\.$/, '') : '';
+      const name = rankMatch ? nameAndRank.substring(rankMatch[0].length).trim() : nameAndRank;
+      
+      let html = `<div class="${memberClass}">`;
+      if (rank) {
+        html += `<span class="${rankClass}">${rank}</span>`;
+      }
+      if (name) {
+        html += `<span class="${nameClass}">${name}</span>`;
+      }
+      if (role) {
+        html += `<span class="${roleClass}">${role}</span>`;
+      }
+      html += `</div>`;
+      
+      return html;
+    }).join('');
+
+    return `<div class="${containerClass}">${memberHtml}</div>`;
+  }
+
+  // ── Modal ────────────────────────────────────
+  const modal = document.getElementById("modal-overlay");
+  const modalTitle = document.getElementById("modal-title");
+  const modalBody = document.getElementById("modal-body");
+  const modalClose = document.getElementById("modal-close");
+
+  function openModal(content) {
+    modalTitle.innerHTML = content.title;
+    modalBody.innerHTML = content.body;
+    modal.classList.add("show");
+    document.body.style.overflow = "hidden";
+  }
+
+  function closeModal() {
+    modal.classList.remove("show");
+    document.body.style.overflow = "";
+  }
+
+  modalClose.addEventListener("click", closeModal);
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) closeModal();
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && modal.classList.contains("show")) {
+      closeModal();
+    }
+  });
+
+  // ── Fetch all data in parallel (snapshot-only static build) ──────
+  const SNAPSHOT_BASE = "./data/snapshots";
+
+  async function fetchJson(url, label) {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`${label}: ${response.status} ${response.statusText}`);
+    }
+    return response.json();
+  }
+
+  async function loadDataLayer(snapshotFile, label) {
+    const snapshotUrl = `${SNAPSHOT_BASE}/${snapshotFile}`;
+
+    const data = await fetchJson(snapshotUrl, `${label} snapshot`);
+    console.log(`[data-layer] ${label}: snapshot`);
+    return data;
+  }
+
+  console.log("Starting to fetch map data...");
+
+  Promise.all([
+    loadDataLayer("map-dioceses.json", "dioceses"),
+    loadDataLayer("map-parishes-poly.json", "parishes-poly"),
+    loadDataLayer("map-points.json", "points"),
+    loadDataLayer("map-meta.json", "meta"),
+  ]).then(([dioceses, parishPolys, points, meta]) => {
+    try {
+      console.log("All data loaded successfully");
+      console.log("dioceses features:", dioceses.features?.length || 0);
+      console.log("parishPolys features:", parishPolys.features?.length || 0);
+      console.log("points features:", points.features?.length || 0);
+      
+      dioceseData = dioceses;
+      parishPolyData = parishPolys;
+      pointsData = points;
+      metaData = meta;
+
+      document.getElementById("loading-overlay").style.display = "none";
+      document.getElementById("stats").textContent =
+        `${meta.stats.totalFeatures} parishes · ${meta.stats.dioceses} dioceses · ${meta.stats.clusters} clusters`;
+
+      console.log("About to call buildLegend...");
+      buildLegend(meta);
+      console.log("About to call populateFilterDropdowns...");
+      populateFilterDropdowns();
+      console.log("About to call initMap...");
+      initMap();
+      console.log("About to call attachEventListeners...");
+      attachEventListeners();
+      console.log("Map initialization complete!");
+    } catch (err) {
+      console.error("Error during map initialization:", err, err.stack);
+      document.getElementById("loading-overlay").innerHTML =
+        `<div style="text-align:center"><p style="color:#c55">Error initializing map</p><p style="color:#aab;font-size:0.82rem;margin-top:0.5rem">${err.message}<br>Check browser console</p></div>`;
+    }
+  }).catch(err => {
+    console.error("Error loading map data:", err);
+    document.getElementById("loading-overlay").innerHTML =
+      `<div style="text-align:center"><p style="color:#c55">Failed to load map data</p><p style="color:#aab;font-size:0.82rem;margin-top:0.5rem">${err.message}<br>Check browser console for details</p></div>`;
+  });
+  
+  // Failsafe: if loading takes too long, show error
+  setTimeout(() => {
+    if (metaData === null) {
+      console.error("Map data loading timed out");
+      document.getElementById("loading-overlay").innerHTML =
+        `<div style="text-align:center"><p style="color:#c55">Map data is taking too long to load</p><p style="color:#aab;font-size:0.82rem;margin-top:0.5rem">Try refreshing the page</p></div>`;
+    }
+  }, 15000);
+
+  // ── Build legend ────────────────────────────
+  function buildLegend(meta) {
+    const container = document.getElementById("legend-items");
+    const jurisdictions = [...new Set(meta.dioceses.map(d => d.jurisdiction))].sort();
+
+    for (const j of jurisdictions) {
+      const color = meta.colors[j] || meta.defaultColor;
+      const el = document.createElement("div");
+      el.className = "legend-item";
+      el.innerHTML =
+        `<div class="legend-swatch" style="background:rgba(${color[0]},${color[1]},${color[2]},0.7)"></div>` +
+        `<span>${escapeHtml(abbreviateJurisdiction(j))}</span>`;
+      el.addEventListener("click", () => {
+        if (hiddenJurisdictions.has(j)) {
+          hiddenJurisdictions.delete(j);
+          el.classList.remove("hidden");
+        } else {
+          hiddenJurisdictions.add(j);
+          el.classList.add("hidden");
+        }
+        updateLayers();
+      });
+      container.appendChild(el);
+    }
+  }
+
+  function escapeHtml(str) {
+    if (!str) return str;
+    const div = document.createElement("div");
+    div.appendChild(document.createTextNode(String(str)));
+    return div.innerHTML;
+  }
+
+  function abbreviateJurisdiction(j) {
+    return j
+      .replace("Russian Orthodox Church Outside of Russia", "ROCOR")
+      .replace("Orthodox Church in America", "OCA")
+      .replace("Greek Orthodox Archdiocese of America", "GOARCH")
+      .replace("Antiochian Orthodox Christian Archdiocese of North America", "Antiochian")
+      .replace("Serbian Orthodox Church in North and South America", "Serbian")
+      .replace("Romanian Orthodox Archdiocese in the Americas", "Romanian")
+      .replace("Bulgarian Eastern Orthodox Diocese of the USA, Canada, and Australia", "Bulgarian")
+      .replace("American Carpatho-Russian Orthodox Diocese", "ACROD")
+      .replace("Ukrainian Orthodox Church of the USA", "UOC-USA")
+      .replace("Albanian Orthodox Diocese of America", "Albanian")
+      .replace("Georgian Orthodox Church", "Georgian")
+      .replace("Patriarchal Parishes of the Russian Orthodox Church in the USA", "Moscow Pat.")
+      .replace("Romanian Orthodox Church", "Romanian (Europe)")
+      .replace("Serbian Orthodox Church", "Serbian (Europe)")
+      .replace("Ukrainian Orthodox Church", "Ukrainian (Europe)")
+      .replace("Russian Orthodox Church", "Russian (Europe)")
+      .replace("Church of Greece", "Church of Greece")
+      .replace("Polish Orthodox Church", "Polish");
+  }
+
+  // ── Init deck.gl + MapLibre ─────────────────
+  function initMap() {
+    const INITIAL_VIEW = {
+      longitude: -96,
+      latitude: 39,
+      zoom: 4,
+      pitch: 0,
+      bearing: 0,
+    };
+
+    const MAP_STYLE = {
+      version: 8,
+      sources: {
+        osm: {
+          type: "raster",
+          tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+          tileSize: 256,
+          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
+        },
+      },
+      layers: [
+        {
+          id: "osm",
+          type: "raster",
+          source: "osm",
+          paint: { "raster-saturation": -0.6, "raster-brightness-min": 0.08 },
+        },
+      ],
+    };
+
+    deckInstance = new deck.DeckGL({
+      container: "map",
+      mapLib: maplibregl,
+      mapStyle: MAP_STYLE,
+      initialViewState: INITIAL_VIEW,
+      controller: true,
+      onViewStateChange: ({ viewState }) => {
+        currentZoom = viewState.zoom;
+        updateLayers();
+      },
+      getTooltip: null,
+    });
+
+    updateLayers();
+
+    // Tier toggle handlers
+    document.getElementById("showDioceses").addEventListener("change", updateLayers);
+    document.getElementById("showParishes").addEventListener("change", updateLayers);
+    document.getElementById("showPoints").addEventListener("change", updateLayers);
+    document.getElementById("showLabels").addEventListener("change", updateLayers);
+    document.getElementById("showHeatmap").addEventListener("change", updateLayers);
+    document.getElementById("highlightImportant").addEventListener("change", updateLayers);
+  }
+
+  // ── Populate filter dropdowns ───────────────
+  function populateFilterDropdowns() {
+    if (!pointsData || !metaData) return;
+
+    // Dioceses
+    const dioceses = [...new Set(pointsData.features.map(f => f.properties.diocese).filter(Boolean))].sort();
+    const dioceseSelect = document.getElementById("filterDiocese");
+    dioceses.forEach(d => {
+      const opt = document.createElement("option");
+      opt.value = d;
+      opt.textContent = d;
+      dioceseSelect.appendChild(opt);
+    });
+
+    // Patriarchates
+    const patriarchates = [...new Set(pointsData.features.map(f => f.properties.patriarchate).filter(Boolean))].sort();
+    const patriarchateSelect = document.getElementById("filterPatriarchate");
+    patriarchates.forEach(p => {
+      const opt = document.createElement("option");
+      opt.value = p;
+      opt.textContent = p;
+      patriarchateSelect.appendChild(opt);
+    });
+
+    // States
+    const states = [...new Set(pointsData.features.map(f => f.properties.state).filter(Boolean))].sort();
+    const stateSelect = document.getElementById("filterState");
+    states.forEach(s => {
+      const opt = document.createElement("option");
+      opt.value = s;
+      opt.textContent = s;
+      stateSelect.appendChild(opt);
+    });
+  }
+
+  // ── Attach event listeners ──────────────────
+  function attachEventListeners() {
+    // Search
+    const searchInput = document.getElementById("searchInput");
+    searchInput.addEventListener("input", (e) => {
+      currentFilters.search = e.target.value.toLowerCase();
+      if (currentFilters.search) {
+        searchInput.classList.add("search-active");
+      } else {
+        searchInput.classList.remove("search-active");
+      }
+      applyFilters();
+    });
+
+    // Dropdowns
+    document.getElementById("filterDiocese").addEventListener("change", (e) => {
+      currentFilters.diocese = e.target.value;
+      applyFilters();
+    });
+    document.getElementById("filterPatriarchate").addEventListener("change", (e) => {
+      currentFilters.patriarchate = e.target.value;
+      applyFilters();
+    });
+    document.getElementById("filterState").addEventListener("change", (e) => {
+      currentFilters.state = e.target.value;
+      applyFilters();
+    });
+    document.getElementById("filterImportance").addEventListener("change", (e) => {
+      currentFilters.importance = e.target.value;
+      applyFilters();
+    });
+
+    // Reset filters
+    document.getElementById("resetFilters").addEventListener("click", () => {
+      currentFilters = { search: '', diocese: '', patriarchate: '', state: '', importance: '' };
+      const searchInput = document.getElementById("searchInput");
+      searchInput.value = '';
+      searchInput.classList.remove("search-active");
+      document.getElementById("filterDiocese").value = '';
+      document.getElementById("filterPatriarchate").value = '';
+      document.getElementById("filterState").value = '';
+      document.getElementById("filterImportance").value = '';
+      applyFilters();
+    });
+
+    // Stats panel toggle
+    document.getElementById("showStats").addEventListener("change", (e) => {
+      const panel = document.getElementById("stats-panel");
+      if (e.target.checked) {
+        panel.classList.add("visible");
+        updateStats();
+      } else {
+        panel.classList.remove("visible");
+      }
+    });
+
+    // Parish list toggle
+    document.getElementById("showParishList").addEventListener("change", (e) => {
+      const panel = document.getElementById("parish-list-panel");
+      if (e.target.checked) {
+        panel.classList.add("visible");
+        updateParishList();
+      } else {
+        panel.classList.remove("visible");
+      }
+    });
+
+    // Export
+    document.getElementById("exportVisible").addEventListener("click", exportVisible);
+
+    // Keyboard shortcuts
+    document.addEventListener("keydown", (e) => {
+      // / - Focus search
+      if (e.key === "/" && document.activeElement.tagName !== "INPUT") {
+        e.preventDefault();
+        document.getElementById("searchInput").focus();
+      }
+      // Esc - Clear filters (only if modal is not open)
+      if (e.key === "Escape" && !modal.classList.contains("show")) {
+        if (document.activeElement === document.getElementById("searchInput")) {
+          document.getElementById("searchInput").blur();
+        }
+        if (currentFilters.search || currentFilters.diocese || currentFilters.patriarchate || 
+            currentFilters.state || currentFilters.importance) {
+          document.getElementById("resetFilters").click();
+        }
+      }
+    });
+  }
+
+  // ── Apply filters ────────────────────────────
+  function applyFilters() {
+    if (!pointsData) return;
+
+    filteredPoints = {
+      type: "FeatureCollection",
+      features: pointsData.features.filter(f => {
+        const p = f.properties;
+
+        // Search filter
+        if (currentFilters.search) {
+          const searchLower = currentFilters.search;
+          const matchName = p.name && p.name.toLowerCase().includes(searchLower);
+          const matchCity = p.city && p.city.toLowerCase().includes(searchLower);
+          const matchState = p.state && p.state.toLowerCase().includes(searchLower);
+          const matchDiocese = p.diocese && p.diocese.toLowerCase().includes(searchLower);
+          if (!matchName && !matchCity && !matchState && !matchDiocese) return false;
+        }
+
+        // Diocese filter
+        if (currentFilters.diocese && p.diocese !== currentFilters.diocese) return false;
+
+        // Patriarchate filter
+        if (currentFilters.patriarchate && p.patriarchate !== currentFilters.patriarchate) return false;
+
+        // State filter
+        if (currentFilters.state && p.state !== currentFilters.state) return false;
+
+        // Importance filter
+        if (currentFilters.importance && p.importance !== currentFilters.importance) return false;
+
+        return true;
+      })
+    };
+
+    // Update header stats
+    const hasFilters = currentFilters.search || currentFilters.diocese || currentFilters.patriarchate || 
+                       currentFilters.state || currentFilters.importance;
+    if (hasFilters) {
+      document.getElementById("stats").innerHTML = 
+        `<span style="color:var(--gold)">🔍 ${filteredPoints.features.length}</span> of ${metaData.stats.totalFeatures} parishes · ` +
+        `<span style="font-size:0.7rem;opacity:0.7">filters active</span>`;
+    } else {
+      document.getElementById("stats").textContent =
+        `${metaData.stats.totalFeatures} parishes · ${metaData.stats.dioceses} dioceses · ${metaData.stats.clusters} clusters`;
+    }
+
+    updateLayers();
+    updateStats();
+    updateParishList();
+  }
+
+  // ── Update statistics panel ──────────────────
+  function updateStats() {
+    if (!filteredPoints && !pointsData) return;
+    const data = filteredPoints || pointsData;
+    const features = data.features.filter(f => !hiddenJurisdictions.has(f.properties.jurisdiction));
+
+    const stats = {
+      total: features.length,
+      byJurisdiction: {},
+      byPatriarchate: {},
+      byImportance: {},
+      byState: {}
+    };
+
+    features.forEach(f => {
+      const p = f.properties;
+      
+      // By jurisdiction
+      stats.byJurisdiction[p.jurisdiction] = (stats.byJurisdiction[p.jurisdiction] || 0) + 1;
+      
+      // By patriarchate
+      if (p.patriarchate) {
+        stats.byPatriarchate[p.patriarchate] = (stats.byPatriarchate[p.patriarchate] || 0) + 1;
+      }
+      
+      // By importance
+      if (p.importance) {
+        stats.byImportance[p.importance] = (stats.byImportance[p.importance] || 0) + 1;
+      }
+      
+      // By state
+      if (p.state) {
+        stats.byState[p.state] = (stats.byState[p.state] || 0) + 1;
+      }
+    });
+
+    // Render stats
+    let html = `<div class="stat-row"><span class="stat-label">Total Visible:</span><span class="stat-value">${stats.total}</span></div>`;
+    
+    // Top jurisdictions
+    const topJur = Object.entries(stats.byJurisdiction)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3);
+    if (topJur.length > 0) {
+      html += `<div class="stat-section-label">Top Jurisdictions</div>`;
+      topJur.forEach(([j, c]) => {
+        html += `<div class="stat-row"><span class="stat-label">${abbreviateJurisdiction(j)}</span><span class="stat-value">${c}</span></div>`;
+      });
+    }
+
+    // Important
+    const impCount = Object.values(stats.byImportance).reduce((a, b) => a + b, 0);
+    if (impCount > 0) {
+      html += `<div class="stat-section-label">Notable Parishes</div>`;
+      Object.entries(stats.byImportance).forEach(([imp, c]) => {
+        html += `<div class="stat-row"><span class="stat-label">${IMPORTANCE_LABELS[imp]}</span><span class="stat-value">${c}</span></div>`;
+      });
+    }
+
+    document.getElementById("stats-content").innerHTML = html;
+  }
+
+  // ── Update parish list ───────────────────────
+  function updateParishList() {
+    if (!filteredPoints && !pointsData) return;
+    const data = filteredPoints || pointsData;
+    const features = data.features
+      .filter(f => !hiddenJurisdictions.has(f.properties.jurisdiction))
+      .slice(0, 100); // Limit to 100
+
+    let html = '';
+    features.forEach(f => {
+      const p = f.properties;
+      const locationParts = [p.city, p.state].filter(Boolean);
+      html += `<div class="parish-list-item" data-lng="${f.geometry.coordinates[0]}" data-lat="${f.geometry.coordinates[1]}">`;
+      html += `<div class="parish-list-item-name">${escapeHtml(p.name)}</div>`;
+      html += `<div class="parish-list-item-details">${locationParts.map(escapeHtml).join(", ")}`;
+      if (p.diocese) html += ` · ${escapeHtml(p.diocese)}`;
+      html += `</div></div>`;
+    });
+
+    if (features.length === 100) {
+      html += `<div class="stat-section-label">Showing first 100 results</div>`;
+    }
+
+    document.getElementById("parish-list-content").innerHTML = html;
+
+    // Add click handlers to fly to parish
+    document.querySelectorAll(".parish-list-item").forEach(item => {
+      item.addEventListener("click", () => {
+        const lng = parseFloat(item.dataset.lng);
+        const lat = parseFloat(item.dataset.lat);
+        if (deckInstance && !isNaN(lng) && !isNaN(lat)) {
+          deckInstance.setProps({
+            initialViewState: {
+              longitude: lng,
+              latitude: lat,
+              zoom: 12,
+              pitch: 0,
+              bearing: 0,
+              transitionDuration: 1000,
+              transitionInterpolator: new deck.FlyToInterpolator()
+            }
+          });
+        }
+      });
+    });
+  }
+
+  // ── Export visible parishes ──────────────────
+  function exportVisible() {
+    if (!filteredPoints && !pointsData) return;
+    const data = filteredPoints || pointsData;
+    const features = data.features.filter(f => !hiddenJurisdictions.has(f.properties.jurisdiction));
+
+    const csv = [
+      ['Name', 'Diocese', 'Jurisdiction', 'City', 'State', 'Address', 'Latitude', 'Longitude'].join(','),
+      ...features.map(f => {
+        const p = f.properties;
+        return [
+          `"${(p.name || '').replace(/"/g, '""')}"`,
+          `"${(p.diocese || '').replace(/"/g, '""')}"`,
+          `"${(p.jurisdiction || '').replace(/"/g, '""')}"`,
+          `"${(p.city || '').replace(/"/g, '""')}"`,
+          `"${(p.state || '').replace(/"/g, '""')}"`,
+          `"${(p.address || '').replace(/"/g, '""')}"`,
+          f.geometry.coordinates[1],
+          f.geometry.coordinates[0]
+        ].join(',');
+      })
+    ].join('\n');
+
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `orthodox-parishes-${Date.now()}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  // ── Filter features by hidden jurisdictions ─
+  function filterFC(fc) {
+    if (!fc || !fc.features) return { type: "FeatureCollection", features: [] };
+    if (hiddenJurisdictions.size === 0) return fc;
+    return {
+      type: "FeatureCollection",
+      features: fc.features.filter(f => !hiddenJurisdictions.has(f.properties.jurisdiction)),
+    };
+  }
+
+  // ── Get current point data (filtered or all) ─
+  function getCurrentPoints() {
+    const data = filteredPoints || pointsData;
+    if (!data) return { type: "FeatureCollection", features: [] };
+    return filterFC(data);
+  }
+
+  // ── Update deck.gl layers ───────────────────
+  function updateLayers() {
+    if (!deckInstance || !dioceseData) return;
+
+    const showDioceses = document.getElementById("showDioceses").checked;
+    const showParishes = document.getElementById("showParishes").checked;
+    const showPoints = document.getElementById("showPoints").checked;
+    const showHeatmap = document.getElementById("showHeatmap").checked;
+    const showLabels = document.getElementById("showLabels").checked;
+    const highlightImportant = document.getElementById("highlightImportant").checked;
+
+    // Parish opacity rises at higher zoom; diocese opacity higher at low zoom
+    const parishOpacity = showParishes ? Math.max(0, Math.min(1, (currentZoom - 5) * 0.15)) : 0;
+
+    const layers = [];
+
+    // ── Heatmap layer (density visualization) ──
+    if (showHeatmap && pointsData) {
+      const currentPts = getCurrentPoints();
+      layers.push(new deck.HeatmapLayer({
+        id: "heatmap",
+        data: currentPts.features,
+        getPosition: f => f.geometry.coordinates,
+        getWeight: f => f.properties.importance ? 3 : 1,
+        radiusPixels: 60,
+        intensity: 1,
+        threshold: 0.05,
+        colorRange: [
+          [0, 0, 0, 0],
+          [100, 50, 150, 100],
+          [150, 80, 200, 150],
+          [200, 120, 255, 200],
+          [255, 180, 100, 255],
+          [255, 215, 0, 255]
+        ],
+        aggregation: "SUM",
+      }));
+    }
+
+    // ── Tier 1: Diocese overlapping hulls ──
+    // Diocesan seats: special marker overlay
+    if (showPoints && pointsData) {
+      const allPts = getCurrentPoints();
+      const seatFeatures = allPts.features.filter(f => f.properties.diocesanSeats && f.properties.diocesanSeats.length > 0);
+      if (seatFeatures.length > 0) {
+        // Crown/bishop indicator ring
+        layers.push(new deck.GeoJsonLayer({
+          id: "diocesan-seats-indicator",
+          data: { type: "FeatureCollection", features: seatFeatures },
+          pointType: "circle",
+          filled: false,
+          stroked: true,
+          getPointRadius: currentZoom > 9 ? 180 : currentZoom > 6 ? 900 : 3200,
+          pointRadiusUnits: "meters",
+          pointRadiusMinPixels: 8,
+          pointRadiusMaxPixels: 20,
+          getLineColor: [197, 163, 68, 180],  // Gold color
+          getLineWidth: 2.5,
+          lineWidthUnits: "pixels",
+          pickable: false,
+          updateTriggers: {
+            getPointRadius: [currentZoom],
+          },
+        }));
+      }
+    }
+    // Semi-transparent fills that overlap; hovered diocese becomes prominent
+    if (showDioceses) {
+      layers.push(new deck.GeoJsonLayer({
+        id: "dioceses",
+        data: filterFC(dioceseData),
+        filled: true,
+        stroked: true,
+        getFillColor: f => {
+          const c = f.properties.color;
+          const eid = f.properties.entityId || f.properties.diocese;
+          if (hoveredDiocese && hoveredDiocese === eid) {
+            // Hovered diocese: fill prominently
+            return [c[0], c[1], c[2], 160];
+          }
+          if (hoveredDiocese && hoveredDiocese !== eid) {
+            // Another diocese hovered — dim this one
+            return [c[0], c[1], c[2], 20];
+          }
+          // Default: semi-transparent for overlap visibility
+          return [c[0], c[1], c[2], 50];
+        },
+        getLineColor: f => {
+          const c = f.properties.color;
+          const eid = f.properties.entityId || f.properties.diocese;
+          if (hoveredDiocese && hoveredDiocese === eid) {
+            return [c[0], c[1], c[2], 255];
+          }
+          if (hoveredDiocese && hoveredDiocese !== eid) {
+            return [c[0], c[1], c[2], 40];
+          }
+          return [c[0], c[1], c[2], 140];
+        },
+        getLineWidth: f => {
+          const eid = f.properties.entityId || f.properties.diocese;
+          return (hoveredDiocese && hoveredDiocese === eid) ? 3 : 1.5;
+        },
+        lineWidthUnits: "pixels",
+        pickable: true,
+        onHover: (info) => {
+          if (info.object) {
+            const eid = info.object.properties.entityId || info.object.properties.diocese;
+            if (hoveredDiocese !== eid) {
+              hoveredDiocese = eid;
+              updateLayers();
+            }
+            showTooltipDiocese(info);
+          } else {
+            if (hoveredDiocese !== null) {
+              hoveredDiocese = null;
+              updateLayers();
+            }
+            tooltip.classList.remove("visible"); tooltip.style.display = "none";
+          }
+        },
+        onClick: (info) => showModalDiocese(info),
+        updateTriggers: {
+          getFillColor: [hoveredDiocese, hiddenJurisdictions.size],
+          getLineColor: [hoveredDiocese, hiddenJurisdictions.size],
+          getLineWidth: [hoveredDiocese],
+        },
+      }));
+    }
+
+    // ── Tier 2: Parish territory polygons (dominance — global Voronoi) ──
+    if (showParishes && parishOpacity > 0) {
+      layers.push(new deck.GeoJsonLayer({
+        id: "parish-polys",
+        data: filterFC(parishPolyData),
+        filled: true,
+        stroked: true,
+        getFillColor: f => {
+          const c = f.properties.color;
+          return [c[0], c[1], c[2], Math.round(c[3] * parishOpacity)];
+        },
+        getLineColor: f => {
+          const c = f.properties.color;
+          return [c[0], c[1], c[2], Math.round(160 * parishOpacity)];
+        },
+        getLineWidth: 1,
+        lineWidthUnits: "pixels",
+        pickable: true,
+        onHover: (info) => showTooltipParishPoly(info),
+        onClick: (info) => showModalTerritory(info),
+        updateTriggers: {
+          getFillColor: [parishOpacity, hiddenJurisdictions.size],
+          getLineColor: [parishOpacity, hiddenJurisdictions.size],
+        },
+      }));
+    }
+
+    // Points: parish markers
+    if (showPoints) {
+      const filteredPts = getCurrentPoints();
+      // Keep the base points layer as the full visible set so ordinary parishes
+      // always render; notable points are added as a separate highlight overlay.
+      const regularFeatures = filteredPts;
+      const importantFeatures = highlightImportant
+        ? { type: "FeatureCollection", features: filteredPts.features.filter(f => f.properties.importance) }
+        : { type: "FeatureCollection", features: [] };
+
+      // Regular parish markers
+      layers.push(new deck.GeoJsonLayer({
+        id: "points",
+        data: regularFeatures,
+        pointType: "circle",
+        filled: true,
+        stroked: true,
+        getPointRadius: currentZoom > 9 ? 120 : currentZoom > 6 ? 600 : 2000,
+        pointRadiusUnits: "meters",
+        pointRadiusMinPixels: 3,
+        pointRadiusMaxPixels: 12,
+        getFillColor: f => {
+          const c = f.properties.color;
+          return [c[0], c[1], c[2], 220];
+        },
+        getLineColor: [255, 255, 255, 180],
+        getLineWidth: 1,
+        lineWidthUnits: "pixels",
+        pickable: true,
+        onHover: (info) => showTooltipPoint(info),
+        onClick: (info) => showModalParish(info),
+        updateTriggers: {
+          getPointRadius: [currentZoom],
+          getFillColor: [hiddenJurisdictions.size, filteredPoints],
+        },
+      }));
+
+      // Important parish markers (larger, bright outline, pulsing effect)
+      if (highlightImportant && importantFeatures.features.length > 0) {
+        // Outer glow ring
+        layers.push(new deck.GeoJsonLayer({
+          id: "points-important-glow",
+          data: importantFeatures,
+          pointType: "circle",
+          filled: true,
+          stroked: false,
+          getPointRadius: currentZoom > 9 ? 200 : currentZoom > 6 ? 1000 : 3400,
+          pointRadiusUnits: "meters",
+          pointRadiusMinPixels: 7,
+          pointRadiusMaxPixels: 22,
+          getFillColor: f => {
+            const c = f.properties.color;
+            return [c[0], c[1], c[2], 60];
+          },
+          pickable: false,
+          updateTriggers: {
+            getPointRadius: [currentZoom],
+            getFillColor: [hiddenJurisdictions.size, filteredPoints],
+          },
+        }));
+
+        // Main dot
+        layers.push(new deck.GeoJsonLayer({
+          id: "points-important",
+          data: importantFeatures,
+          pointType: "circle",
+          filled: true,
+          stroked: true,
+          getPointRadius: currentZoom > 9 ? 160 : currentZoom > 6 ? 800 : 2800,
+          pointRadiusUnits: "meters",
+          pointRadiusMinPixels: 5,
+          pointRadiusMaxPixels: 16,
+          getFillColor: f => {
+            const c = f.properties.color;
+            return [c[0], c[1], c[2], 240];
+          },
+          getLineColor: [255, 255, 255, 255],
+          getLineWidth: 2,
+          lineWidthUnits: "pixels",
+          pickable: true,
+          onHover: (info) => showTooltipPoint(info),
+          onClick: (info) => showModalParish(info),
+          updateTriggers: {
+            getPointRadius: [currentZoom],
+            getFillColor: [hiddenJurisdictions.size, filteredPoints],
+          },
+        }));
+      }
+    }
+
+    // Labels: parish names at high zoom
+    if (showLabels && pointsData && currentZoom > 9) {
+      const filteredPoints = getCurrentPoints();
+      layers.push(new deck.TextLayer({
+        id: "labels",
+        data: filteredPoints.features,
+        getPosition: f => f.geometry.coordinates,
+        getText: f => f.properties.name,
+        getSize: 12,
+        getColor: [255, 255, 255, 200],
+        getAngle: 0,
+        getTextAnchor: "start",
+        getAlignmentBaseline: "center",
+        getPixelOffset: [10, 0],
+        fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+        fontWeight: 500,
+        outlineWidth: 2,
+        outlineColor: [26, 35, 50, 200],
+        billboard: false,
+        sizeUnits: "pixels",
+        pickable: false,
+      }));
+    }
+
+    // Labels for important locations (visible at lower zoom)
+    if (highlightImportant && pointsData && currentZoom > 6) {
+      const importantOnly = getCurrentPoints();
+      const importantFeats = importantOnly.features.filter(f => f.properties.importance);
+      if (importantFeats.length > 0) {
+        layers.push(new deck.TextLayer({
+          id: "labels-important",
+          data: importantFeats,
+          getPosition: f => f.geometry.coordinates,
+          getText: f => {
+            const label = IMPORTANCE_LABELS[f.properties.importance] || "";
+            return label ? `☆ ${f.properties.name}` : f.properties.name;
+          },
+          getSize: currentZoom > 9 ? 13 : 11,
+          getColor: f => {
+            const c = f.properties.color;
+            return [c[0], c[1], c[2], 230];
+          },
+          getAngle: 0,
+          getTextAnchor: "start",
+          getAlignmentBaseline: "center",
+          getPixelOffset: [14, 0],
+          fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+          fontWeight: 600,
+          outlineWidth: 3,
+          outlineColor: [20, 20, 30, 220],
+          billboard: false,
+          sizeUnits: "pixels",
+          pickable: false,
+          updateTriggers: {
+            getSize: [currentZoom],
+            getColor: [hiddenJurisdictions.size, filteredPoints],
+          },
+        }));
+      }
+    }
+
+    deckInstance.setProps({ layers });
+  }
+
+  // ── Modal handlers ──────────────────────────
+  function showModalParish(info) {
+    if (!info.object) return;
+    const p = info.object.properties;
+    const coords = info.object.geometry.coordinates;
+    
+    const impLabel = IMPORTANCE_LABELS[p.importance];
+    const impBadge = impLabel
+      ? `<span class="modal-badge modal-importance ${p.importance}">${impLabel}</span>`
+      : "";
+
+    let title = `${escapeHtml(p.name)}${impBadge}`;
+    
+    let body = "";
+    if (p.patriarchate) {
+      body += `<div class="modal-badge modal-patriarchate">☦︎ ${escapeHtml(p.patriarchate)}</div>`;
+    }
+
+    // Location section
+    body += `<hr class="modal-divider">`;
+    body += `<div class="modal-section">`;
+    body += `<div class="modal-section-title">Location</div>`;
+    const locationParts = [p.city, p.state].filter(Boolean).map(escapeHtml);
+    if (p.country && p.country !== "USA" && p.country !== "US") locationParts.push(escapeHtml(p.country));
+    if (locationParts.length > 0) {
+      body += `<div class="modal-row"><span class="modal-label">Place</span><span class="modal-value">${locationParts.join(", ")}</span></div>`;
+    }
+    if (p.address) {
+      body += `<div class="modal-row"><span class="modal-label">Address</span><span class="modal-value">${escapeHtml(p.address)}</span></div>`;
+    }
+    if (coords) {
+      body += `<div class="modal-row"><span class="modal-label">Coordinates</span><span class="modal-value"><span class="modal-coords">${coords[1].toFixed(6)}, ${coords[0].toFixed(6)}</span></span></div>`;
+    }
+    body += `</div>`;
+
+    body += `<hr class="modal-divider">`;
+    body += `<div class="modal-section">`;
+    body += `<div class="modal-section-title">Church Hierarchy</div>`;
+    body += `<div class="modal-row"><span class="modal-label">Diocese</span><span class="modal-value">${escapeHtml(p.diocese) || "—"}</span></div>`;
+    if (p.deanery) body += `<div class="modal-row"><span class="modal-label">Deanery</span><span class="modal-value">${escapeHtml(p.deanery)}</span></div>`;
+    body += `<div class="modal-row"><span class="modal-label">Jurisdiction</span><span class="modal-value">${escapeHtml(abbreviateJurisdiction(p.jurisdiction))}</span></div>`;
+    if (p.bishop) body += `<div class="modal-row"><span class="modal-label">Bishop</span><span class="modal-value">${escapeHtml(p.bishop)}</span></div>`;
+    body += `</div>`;
+
+    // Diocesan seats section
+    if (p.diocesanSeats && p.diocesanSeats.length > 0) {
+      body += `<hr class="modal-divider">`;
+      body += `<div class="modal-section">`;
+      body += `<div class="modal-section-title">Diocesan Seat</div>`;
+      p.diocesanSeats.forEach(seat => {
+        body += `<div class="modal-seat-card">`;
+        body += `<div class="modal-seat-name">${escapeHtml(seat.diocese)}</div>`;
+        body += `<div class="modal-row"><span class="modal-label">Type</span><span class="modal-value">${escapeHtml(seat.type)}</span></div>`;
+        body += `<div class="modal-row"><span class="modal-label">Jurisdiction</span><span class="modal-value">${escapeHtml(seat.jurisdiction)}</span></div>`;
+        if (seat.notes) body += `<div class="modal-seat-notes">${escapeHtml(seat.notes)}</div>`;
+        body += `</div>`;
+      });
+      body += `</div>`;
+    }
+    // Contact section
+    if (p.clergy || p.phone || p.email || p.website) {
+      body += `<hr class="modal-divider">`;
+      body += `<div class="modal-section">`;
+      body += `<div class="modal-section-title">Contact Information</div>`;
+      if (p.clergy) {
+        const clergyHtml = formatClergyDisplay(p.clergy);
+        body += `<div class="modal-row"><span class="modal-label">Clergy</span><span class="modal-value">${clergyHtml}</span></div>`;
+      }
+      if (p.phone) body += `<div class="modal-row"><span class="modal-label">Phone</span><span class="modal-value"><a href="tel:${p.phone.replace(/[^0-9+]/g, '')}" class="modal-link">${escapeHtml(p.phone)}</a></span></div>`;
+      if (p.email) body += `<div class="modal-row"><span class="modal-label">Email</span><span class="modal-value"><a href="mailto:${escapeHtml(p.email)}" class="modal-link">${escapeHtml(p.email)}</a></span></div>`;
+      if (p.website) body += `<div class="modal-row"><span class="modal-label">Website</span><span class="modal-value"><a href="${escapeHtml(p.website)}" target="_blank" class="modal-link">${escapeHtml(p.website.replace(/^https?:\/\//, "").replace(/\/$/, ""))} ↗</a></span></div>`;
+      body += `</div>`;
+    }
+
+    // Actions
+    body += `<hr class="modal-divider">`;
+    body += `<div class="modal-section">`;
+    if (coords) {
+      body += `<a href="https://www.google.com/maps/dir/?api=1&destination=${coords[1]},${coords[0]}" target="_blank" class="modal-action-btn">Get Directions</a>`;
+      body += `<button class="modal-action-btn" onclick="navigator.clipboard.writeText('${coords[1].toFixed(6)}, ${coords[0].toFixed(6)}'); this.innerHTML='✓ Copied!'">Copy Coordinates</button>`;
+    }
+    body += `</div>`;
+
+    // Footer
+    if (p.clusterId || p.source) {
+      body += `<hr class="modal-divider">`;
+      body += `<div class="modal-footer-meta">`;
+      if (p.clusterId) body += `<span>Cluster #${escapeHtml(p.clusterId)}</span>`;
+      if (p.source) body += `<span>Source: ${escapeHtml(p.source)}</span>`;
+      body += `</div>`;
+    }
+
+    openModal({ title, body });
+  }
+
+  function showModalDiocese(info) {
+    if (!info.object) return;
+    const p = info.object.properties;
+    
+    let title = `${escapeHtml(p.diocese) || "Unknown Diocese"}`;
+    
+    let body = "";
+    if (p.patriarchate) {
+      body += `<div class="modal-badge modal-patriarchate">☦︎ ${escapeHtml(p.patriarchate)}</div>`;
+    }
+
+    body += `<hr class="modal-divider">`;
+    body += `<div class="modal-section">`;
+    body += `<div class="modal-section-title">Diocese Information</div>`;
+    body += `<div class="modal-row"><span class="modal-label">Jurisdiction</span><span class="modal-value">${escapeHtml(abbreviateJurisdiction(p.jurisdiction))}</span></div>`;
+    if (p.bishop) body += `<div class="modal-row"><span class="modal-label">Bishop</span><span class="modal-value">${escapeHtml(p.bishop)}</span></div>`;
+    if (p.region) body += `<div class="modal-row"><span class="modal-label">Region</span><span class="modal-value">${escapeHtml(p.region)}</span></div>`;
+    if (p.parishCount) body += `<div class="modal-row"><span class="modal-label">Parishes</span><span class="modal-value">${p.parishCount}</span></div>`;
+    body += `</div>`;
+
+    if (p.states && p.states.length > 0) {
+      body += `<hr class="modal-divider">`;
+      body += `<div class="modal-section">`;
+      body += `<div class="modal-section-title">Geographic Coverage</div>`;
+      body += `<div class="modal-value">${p.states.map(escapeHtml).join(", ")}</div>`;
+      body += `</div>`;
+    }
+
+    // Find overlapping dioceses
+    if (dioceseData && dioceseData.features && info.coordinate) {
+      const pt = turf.point(info.coordinate);
+      const overlapping = dioceseData.features.filter(f => {
+        if (hiddenJurisdictions.has(f.properties.jurisdiction)) return false;
+        const eid = f.properties.entityId || f.properties.diocese;
+        if (eid === (p.entityId || p.diocese)) return false;
+        try { return turf.booleanPointInPolygon(pt, f); } catch { return false; }
+      });
+      if (overlapping.length > 0) {
+        body += `<hr class="modal-divider">`;
+        body += `<div class="modal-section">`;
+        body += `<div class="modal-section-title">Overlapping Jurisdictions (${overlapping.length})</div>`;
+        overlapping.slice(0, 10).forEach(ov => {
+          body += `<div class="modal-row"><span class="modal-value">• ${escapeHtml(ov.properties.diocese)} (${escapeHtml(abbreviateJurisdiction(ov.properties.jurisdiction))})</span></div>`;
+        });
+        if (overlapping.length > 10) body += `<div class="modal-footer-meta">…and ${overlapping.length - 10} more</div>`;
+        body += `</div>`;
+      }
+    }
+
+    openModal({ title, body });
+  }
+
+  function showModalTerritory(info) {
+    if (!info.object) return;
+    const p = info.object.properties;
+    
+    let title = `${escapeHtml(p.diocese) || "Parish Territory"}`;
+    
+    let body = "";
+    if (p.patriarchate) {
+      body += `<div class="modal-badge modal-patriarchate">☦︎ ${escapeHtml(p.patriarchate)}</div>`;
+    }
+
+    body += `<hr class="modal-divider">`;
+    body += `<div class="modal-section">`;
+    body += `<div class="modal-section-title">Territory Information</div>`;
+    body += `<div class="modal-row"><span class="modal-label">Territory ID</span><span class="modal-value">${escapeHtml(p.entityId)}</span></div>`;
+    body += `<div class="modal-row"><span class="modal-label">Jurisdiction</span><span class="modal-value">${escapeHtml(abbreviateJurisdiction(p.jurisdiction))}</span></div>`;
+    if (p.parishNames && p.parishNames.length > 0) {
+      body += `<div class="modal-row"><span class="modal-label">Parishes</span><span class="modal-value">${p.parishNames.length}</span></div>`;
+    }
+    body += `</div>`;
+
+    if (p.parishNames && p.parishNames.length > 0) {
+      body += `<hr class="modal-divider">`;
+      body += `<div class="modal-section">`;
+      body += `<div class="modal-section-title">Parishes in Territory</div>`;
+      p.parishNames.forEach(n => {
+        let line = `<div class="modal-row"><span class="modal-value">• ${escapeHtml(n.name) || "?"}`;
+        if (n.city || n.state) line += ` (${[n.city, n.state].filter(Boolean).map(escapeHtml).join(", ")})`;
+        line += `</span></div>`;
+        body += line;
+      });
+      body += `</div>`;
+    }
+
+    openModal({ title, body });
+  }
+
+  // ── Tooltip handlers ────────────────────────
+  function showTooltipDiocese(info) {
+    if (!info.object) {
+      if (hideTooltipTimeout) clearTimeout(hideTooltipTimeout);
+      hideTooltipTimeout = setTimeout(() => { tooltip.classList.remove("visible"); tooltip.style.display = "none"; }, 300);
+      return;
+    }
+    const p = info.object.properties;
+    let html = `<div class="tt-name">${escapeHtml(p.diocese) || "Unknown Diocese"}</div>`;
+    const parts = [escapeHtml(abbreviateJurisdiction(p.jurisdiction))];
+    if (p.parishCount) parts.push(`${p.parishCount} parishes`);
+    if (p.bishop) parts.push(escapeHtml(p.bishop));
+    html += `<div class="tt-meta">${parts.join(" · ")}</div>`;
+    html += `<div class="tt-hint">Click for details</div>`;
+    tooltip.innerHTML = html;
+    positionTooltip(info.x, info.y);
+  }
+
+  function showTooltipParishPoly(info) {
+    if (!info.object) {
+      if (hideTooltipTimeout) clearTimeout(hideTooltipTimeout);
+      hideTooltipTimeout = setTimeout(() => { tooltip.classList.remove("visible"); tooltip.style.display = "none"; }, 300);
+      return;
+    }
+    const p = info.object.properties;
+    let html = `<div class="tt-name">${escapeHtml(p.diocese) || "Parish Territory"}</div>`;
+    const parts = [escapeHtml(abbreviateJurisdiction(p.jurisdiction))];
+    if (p.parishNames && p.parishNames.length > 0) parts.push(`${p.parishNames.length} parishes`);
+    html += `<div class="tt-meta">${parts.join(" · ")}</div>`;
+    html += `<div class="tt-hint">Click for details</div>`;
+    tooltip.innerHTML = html;
+    positionTooltip(info.x, info.y);
+  }
+
+  function showTooltipPoint(info) {
+    if (!info.object) {
+      if (hideTooltipTimeout) clearTimeout(hideTooltipTimeout);
+      hideTooltipTimeout = setTimeout(() => { tooltip.classList.remove("visible"); tooltip.style.display = "none"; }, 300);
+      return;
+    }
+    const p = info.object.properties;
+    const impLabel = IMPORTANCE_LABELS[p.importance];
+    const impBadge = impLabel ? `<span class="tt-badge ${p.importance}">${impLabel}</span>` : "";
+    let html = `<div class="tt-name">${escapeHtml(p.name)}${impBadge}</div>`;
+    const parts = [escapeHtml(p.diocese) || escapeHtml(abbreviateJurisdiction(p.jurisdiction))];
+    const loc = [p.city, p.state].filter(Boolean).map(escapeHtml);
+    if (loc.length) parts.push(loc.join(", "));
+    html += `<div class="tt-meta">${parts.join(" · ")}</div>`;
+    html += `<div class="tt-hint">Click for details</div>`;
+    tooltip.innerHTML = html;
+    positionTooltip(info.x, info.y);
+  }
+
+  function positionTooltip(x, y) {
+    // Clear any pending hide timeout
+    if (hideTooltipTimeout) {
+      clearTimeout(hideTooltipTimeout);
+      hideTooltipTimeout = null;
+    }
+    
+    tooltip.style.display = "block";
+    const pad = 14;
+    const rect = document.getElementById("map-container").getBoundingClientRect();
+    let left = x + pad;
+    let top = y + pad;
+    if (left + 260 > rect.width) left = x - 260 - pad;
+    if (top + 160 > rect.height) top = y - 160 - pad;
+    tooltip.style.left = Math.max(0, left) + "px";
+    tooltip.style.top = Math.max(0, top) + "px";
+    requestAnimationFrame(() => tooltip.classList.add("visible"));
+  }
+
+  // Clear hide timeout when mouse enters map
+  document.getElementById("map").addEventListener("mouseenter", () => {
+    if (hideTooltipTimeout) {
+      clearTimeout(hideTooltipTimeout);
+      hideTooltipTimeout = null;
+    }
+  });
+
+  // Hide tooltip when mouse leaves map
+  document.getElementById("map").addEventListener("mouseleave", () => {
+    tooltip.classList.remove("visible"); tooltip.style.display = "none";
+    
+    if (hoveredDiocese !== null) {
+      hoveredDiocese = null;
+      updateLayers();
+    }
+  });
+})();
+</script>
+
+</body>
+</html>
